@@ -1,15 +1,21 @@
-"""Хранилище состояния: известные ШК и список подписчиков. Сохраняется в JSON-файл."""
+"""Хранилище состояния: известные ШК, подписчики и ID сотрудников (настраиваемые).
+
+Сохраняется в JSON-файл. ID сотрудников можно менять прямо из Telegram
+(/ids add, /ids remove) — значения из .env используются как стартовые,
+а текущий список хранится здесь же.
+"""
 import json
 import os
 import threading
 
 
 class State:
-    def __init__(self, path: str):
+    def __init__(self, path: str, initial_employee_ids: set[str] | None = None):
         self.path = path
         self._lock = threading.Lock()
         self.seen_barcodes: set[str] = set()
         self.subscribers: set[int] = set()
+        self.employee_ids: set[str] = set(initial_employee_ids or ())
         self._load()
 
     def _load(self) -> None:
@@ -20,6 +26,8 @@ class State:
                 data = json.load(f)
             self.seen_barcodes = set(data.get("seen_barcodes", []))
             self.subscribers = set(data.get("subscribers", []))
+            if "employee_ids" in data:
+                self.employee_ids = {str(x) for x in data["employee_ids"]}
         except (json.JSONDecodeError, OSError):
             # повреждённый файл — начинаем с чистого листа
             pass
@@ -32,6 +40,7 @@ class State:
                     {
                         "seen_barcodes": sorted(self.seen_barcodes),
                         "subscribers": sorted(self.subscribers),
+                        "employee_ids": sorted(self.employee_ids),
                     },
                     f,
                     ensure_ascii=False,
@@ -57,3 +66,23 @@ class State:
             return False
         self.subscribers.discard(chat_id)
         return True
+
+    # ---------------- ID сотрудников (настраиваемый фильтр) -----------------
+
+    def add_employee_ids(self, ids: list[str]) -> list[str]:
+        """Добавляет ID, возвращает список реально добавленных."""
+        added = []
+        for x in ids:
+            if x and x not in self.employee_ids:
+                self.employee_ids.add(x)
+                added.append(x)
+        return added
+
+    def remove_employee_ids(self, ids: list[str]) -> list[str]:
+        """Удаляет ID, возвращает список реально удалённых."""
+        removed = []
+        for x in ids:
+            if x in self.employee_ids:
+                self.employee_ids.discard(x)
+                removed.append(x)
+        return removed
