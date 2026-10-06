@@ -38,3 +38,13 @@ EMPLOYEE_ID_COLUMN = os.getenv("EMPLOYEE_ID_COLUMN", "ID")
 TARGET_EMPLOYEE_IDS: set[str] = {
     x.strip() for x in os.getenv("TARGET_EMPLOYEE_IDS", "").split(",") if x.strip()
 }
+
+# ------------------------- Ограничение доступа -------------------------------
+# Белый список Telegram ID пользователей, которым разрешено пользоваться ботом.
+# Через запятую. Пусто = доступ разрешён всем (текущее поведение).
+# Свой Telegram ID можно узнать командой /id (работает и у запрещённых —
+# чтобы вы могли добавить себя в ALLOWED_USER_IDS).
+# Пример: ALLOWED_USER_IDS=810321569,123456789
+ALLOWED_USER_IDS: set[int] = {
+    int(x.strip()) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x.strip().isdigit()
+}

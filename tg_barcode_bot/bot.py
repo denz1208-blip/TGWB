@@ -35,6 +35,55 @@ log = logging.getLogger("barcode-bot")
 state = State(config.STATE_FILE, initial_employee_ids=config.TARGET_EMPLOYEE_IDS)
 dp = Dispatcher()
 
+
+# --------------------------- Ограничение доступа ------------------------------
+# Белый список Telegram ID (ALLOWED_USER_IDS в .env и/или команда /access add).
+# Пока список пуст — доступ разрешён всем. /start запрещённым показывает их ID,
+# чтобы владелец мог добавить человека в белый список.
+
+def request_kb(uid: int) -> InlineKeyboardMarkup:
+    """Inline-кнопки «Разрешить / Запретить» для неавторизованного пользователя."""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Разрешить доступ", callback_data=f"acc:add:{uid}"),
+                InlineKeyboardButton(text="🚫 Отклонить", callback_data=f"acc:deny:{uid}"),
+            ]
+        ]
+    )
+
+
+@dp.message(lambda m: not state.is_allowed(m.from_user.id if m.from_user else None))
+async def access_denied(message: Message) -> None:
+    uid = message.from_user.id if message.from_user else 0
+    username = getattr(message.from_user, "username", "") or ""
+    who = f"@{username}" if username else (getattr(message.from_user, "full_name", "") or "неизвестный")
+    log.info("Отказано в доступе пользователю %s (%s)", uid, who)
+
+    # Если доступ открыт (.env пуст) — просто отвечаем; сюда заходим только
+    # когда список задан и пользователя в нём нет.
+    admins = sorted(config.ALLOWED_USER_IDS | state.allowed_users)
+    if admins and uid:
+        # уведомляем админов о запросе доступа
+        text = (
+            f"🔐 Запрос доступа к боту\n"
+            f"Кто: {who}\n"
+            f"Telegram ID: {uid}\n"
+            f"Добавить: /access add {uid}"
+        )
+        for admin_id in admins:
+            try:
+                await bot.send_message(admin_id, text, reply_markup=request_kb(uid))
+            except Exception as e:  # noqa: BLE001
+                log.warning("Не удалось уведомить админа %s: %s", admin_id, e)
+
+    await message.answer(
+        "⛔ Доступ к боту закрыт.\n\n"
+        f"Ваш Telegram ID: {uid}\n"
+        "Попросите владельца добавить вас командой:\n"
+        f"/access add {uid}"
+    )
+
 bot: Bot = None  # инициализируется в main()
 
 LOOKUP_COUNT = 20  # сколько последних ШК показывать по ID
@@ -89,6 +138,14 @@ def filter_line() -> str:
     return "ID сотрудников: все (добавьте конкретные в разделе 👥 Отслеживание)"
 
 
+def access_line() -> str:
+    lst = sorted(state.allowed_ids())
+    if not lst:
+        return "Доступ: открыт для всех (ограничьте через /access add <ID>)"
+    return f"Доступ: закрытый режим, разрешён {len(lst)} пользовател(ям): " + \
+        ", ".join(str(x) for x in lst[:20])
+
+
 def help_text() -> str:
     return (
         "🔎 Бот отслеживания новых ШК\n"
@@ -96,11 +153,17 @@ def help_text() -> str:
         "⚙️ Фильтр уведомлений:\n"
         f"• Колонка «{config.STATUS_COLUMN}» пустая\n"
         f"• {filter_line()}\n\n"
+        f"{access_line()}\n\n"
         "Кнопки меню:\n"
         "🆕 Мои новые ШК — последние уведомления\n"
         "🔎 Поиск по ID — последние 20 ШК любого сотрудника\n"
         "👥 Отслеживание — настройка ID для уведомлений\n"
-        "🔔/🔕 — включить/выключить уведомления"
+        "🔔/🔕 — включить/выключить уведомления\n\n"
+        "Команды доступа:\n"
+        "/access — список разрешённых\n"
+        "/access add <Telegram ID> — разрешить\n"
+        "/access remove <Telegram ID> — запретить\n"
+        "/access clear — открыть бота для всех"
     )
 
 
@@ -139,6 +202,7 @@ async def cmd_status(message: Message) -> None:
         f"Известных ШК: {len(state.seen_barcodes)}\n"
         f"Последний просмотренный ID: {last}\n"
         f"{filter_line()}\n"
+        f"{access_line()}\n"
         f"Интервал проверки: {config.POLL_INTERVAL} сек.",
         reply_markup=main_kb(subscribed),
     )
@@ -235,6 +299,60 @@ async def cmd_ids(message: Message) -> None:
         await kb_tracking(message)
         return
     await kb_tracking(message)
+
+
+# --------------------------- Управление доступом ------------------------------
+
+def _access_status_text() -> str:
+    lst = sorted(state.allowed_ids())
+    env_ids = ", ".join(str(x) for x in sorted(config.ALLOWED_USER_IDS)) or "—"
+    state_ids = ", ".join(str(x) for x in sorted(state.allowed_users)) or "—"
+    return (
+        "🔐 Управление доступом\n\n"
+        f"{access_line()}\n\n"
+        f"Из .env (ALLOWED_USER_IDS): {env_ids}\n"
+        f"Добавлены через /access: {state_ids}\n\n"
+        "Команды:\n"
+        "/access add <Telegram ID> — разрешить пользователя\n"
+        "/access remove <Telegram ID> — запретить\n"
+        "/access clear — очистить список из /access\n"
+        "(чтобы полностью открыть бота, уберите и ALLOWED_USER_IDS из .env)\n\n"
+        "Узнать чей-то Telegram ID: пусть человек напишет боту /id."
+    )
+
+
+@dp.message(Command("access"))
+async def cmd_access(message: Message) -> None:
+    parts = (message.text or "").split()
+    action = parts[1].lower() if len(parts) > 1 else ""
+    ids = [int(x) for x in parts[2:] if x.isdigit()]
+
+    if action == "add":
+        if not ids:
+            await message.answer("Укажите Telegram ID. Пример: /access add 810321569")
+            return
+        added = state.add_allowed(ids)
+        state.save()
+        await message.answer(
+            f"✅ Разрешён доступ: {', '.join(map(str, added)) if added else 'уже были в списке'}\n"
+            + _access_status_text()
+        )
+    elif action in ("remove", "del", "удалить"):
+        if not ids:
+            await message.answer("Укажите Telegram ID. Пример: /access remove 123456789")
+            return
+        removed = state.remove_allowed(ids)
+        state.save()
+        await message.answer(
+            f"🚫 Запрещён доступ: {', '.join(map(str, removed)) if removed else 'их не было в списке'}\n"
+            + _access_status_text()
+        )
+    elif action in ("clear", "очистить"):
+        state.clear_allowed()
+        state.save()
+        await message.answer("🗑 Список /access очищен.\n" + _access_status_text())
+    else:
+        await message.answer(_access_status_text())
 
 
 @dp.message(F.text == "🔎 Поиск по ID")
@@ -398,7 +516,10 @@ def format_barcode_message(barcode: str, row: dict) -> str:
 
 
 async def send_to_subscribers(text: str, reply_markup=None) -> None:
+    allowed = state.allowed_ids()
     for chat_id in list(state.subscribers):
+        if allowed and chat_id not in allowed:
+            continue  # доступ запрещён — не рассылаем
         try:
             await bot.send_message(chat_id, text, reply_markup=reply_markup)
         except Exception as e:  # noqa: BLE001
@@ -490,6 +611,29 @@ async def cb_track(call: CallbackQuery) -> None:
     )
 
 
+# --------------------------- Inline-кнопки доступа ----------------------------
+
+@dp.callback_query(F.data.startswith("acc:"))
+async def cb_access(call: CallbackQuery) -> None:
+    action, _, uid_str = call.data.partition(":")
+    action = action.split(":", 1)[1]  # add / deny
+    uid = int(uid_str)
+    if action == "add":
+        added = state.add_allowed([uid])
+        state.save()
+        await call.message.edit_text(
+            f"✅ Пользователю {uid} разрешён доступ."
+            + ("" if added else " (он уже был в списке)")
+            + f"\n{access_line()}"
+        )
+        await call.answer("Разрешено")
+    else:
+        await call.message.edit_text(
+            f"🚫 Никому ничего не разрешил — кнопка «Запретить» просто закрыла это сообщение."
+        )
+        await call.answer("Отклонено")
+
+
 # --------------------------------- Запуск -----------------------------------
 
 async def main() -> None:
@@ -507,6 +651,7 @@ async def main() -> None:
             BotCommand(command="unsubscribe", description="Выключить уведомления"),
             BotCommand(command="status", description="Статус и фильтры"),
             BotCommand(command="ids", description="Настройка ID сотрудников"),
+            BotCommand(command="access", description="Управление доступом пользователей"),
             BotCommand(command="help", description="Справка"),
         ]
     )

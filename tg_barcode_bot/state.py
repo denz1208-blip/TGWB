@@ -8,6 +8,8 @@ import json
 import os
 import threading
 
+import config
+
 
 class State:
     def __init__(self, path: str, initial_employee_ids: set[str] | None = None):
@@ -16,6 +18,8 @@ class State:
         self.seen_barcodes: set[str] = set()
         self.subscribers: set[int] = set()
         self.employee_ids: set[str] = set(initial_employee_ids or ())
+        # белый список Telegram ID пользователей (пусто = доступ разрешён всем)
+        self.allowed_users: set[int] = set()
         # последний запрошенный ID сотрудника (запоминается навсегда)
         self.last_lookup_id: str = ""
         # последние отправленные уведомления {ШК: данные строки} (до 20, свежие в конце)
@@ -32,6 +36,7 @@ class State:
             self.subscribers = set(data.get("subscribers", []))
             if "employee_ids" in data:
                 self.employee_ids = {str(x) for x in data["employee_ids"]}
+            self.allowed_users = {int(x) for x in data.get("allowed_users", [])}
             self.last_lookup_id = str(data.get("last_lookup_id", "") or "")
             self.newest_notifications = dict(data.get("newest_notifications", {}))
         except (json.JSONDecodeError, OSError):
@@ -47,6 +52,7 @@ class State:
                         "seen_barcodes": sorted(self.seen_barcodes),
                         "subscribers": sorted(self.subscribers),
                         "employee_ids": sorted(self.employee_ids),
+                        "allowed_users": sorted(self.allowed_users),
                         "last_lookup_id": self.last_lookup_id,
                         "newest_notifications": self.newest_notifications,
                     },
@@ -61,6 +67,38 @@ class State:
 
     def is_seen(self, barcode: str) -> bool:
         return barcode in self.seen_barcodes
+
+    # ---------------- Белый список пользователей (ограничение доступа) ------
+
+    def allowed_ids(self) -> set[int]:
+        """Действующий белый список: .env + сохранённые в state."""
+        return config.ALLOWED_USER_IDS | self.allowed_users
+
+    def is_allowed(self, user_id: int | None) -> bool:
+        """Пустой список = доступ разрешён всем."""
+        lst = self.allowed_ids()
+        if not lst:
+            return True
+        return user_id is not None and user_id in lst
+
+    def add_allowed(self, ids: list[int]) -> list[int]:
+        added = []
+        for x in ids:
+            if x and x not in self.allowed_users:
+                self.allowed_users.add(x)
+                added.append(x)
+        return added
+
+    def remove_allowed(self, ids: list[int]) -> list[int]:
+        removed = []
+        for x in ids:
+            if x in self.allowed_users:
+                self.allowed_users.discard(x)
+                removed.append(x)
+        return removed
+
+    def clear_allowed(self) -> None:
+        self.allowed_users.clear()
 
     def subscribe(self, chat_id: int) -> bool:
         """Возвращает True, если чат был добавлен (до этого его не было)."""
