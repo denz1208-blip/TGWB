@@ -48,3 +48,7 @@ TARGET_EMPLOYEE_IDS: set[str] = {
 ALLOWED_USER_IDS: set[int] = {
     int(x.strip()) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x.strip().isdigit()
 }
+
+# Версия бота. Увеличивайте при каждом изменении кода — она показывается
+# в /help и /status, чтобы было видно, обновился ли бот после переустановки.
+BOT_VERSION = os.getenv("BOT_VERSION", "2.1.0")

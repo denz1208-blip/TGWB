@@ -8,7 +8,9 @@
 """
 import asyncio
 import logging
+import os
 import re
+import subprocess
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F
@@ -34,6 +36,30 @@ log = logging.getLogger("barcode-bot")
 
 state = State(config.STATE_FILE, initial_employee_ids=config.TARGET_EMPLOYEE_IDS)
 dp = Dispatcher()
+
+
+def git_commit() -> str:
+    """Короткий хеш последнего коммита (если рядом есть git-репозиторий).
+
+    Позволяет по /help и /status понять, какой именно код сейчас запущен,
+    и обновился ли бот после git pull. Кэш — чтобы не дёргать git на каждое
+    сообщение.
+    """
+    if not hasattr(git_commit, "_cache"):
+        try:
+            out = subprocess.run(
+                ["git", "-C", os.path.dirname(os.path.abspath(__file__)),
+                 "rev-parse", "--short", "HEAD"],
+                capture_output=True, text=True, timeout=3,
+            )
+            git_commit._cache = out.stdout.strip() or "?"
+        except Exception:  # noqa: BLE001
+            git_commit._cache = "?"
+    return git_commit._cache
+
+
+def version_line() -> str:
+    return f"Версия: {config.BOT_VERSION} (код: {git_commit()})"
 
 
 # --------------------------- Ограничение доступа ------------------------------
@@ -149,6 +175,7 @@ def access_line() -> str:
 def help_text() -> str:
     return (
         "🔎 Бот отслеживания новых ШК\n"
+        f"{version_line()}\n"
         f"Слежу за таблицей каждые {config.POLL_INTERVAL} сек.\n\n"
         "⚙️ Фильтр уведомлений:\n"
         f"• Колонка «{config.STATUS_COLUMN}» пустая\n"
@@ -192,12 +219,26 @@ async def cmd_id(message: Message) -> None:
     await message.answer(f"Ваш Telegram ID: {message.from_user.id}")
 
 
+@dp.message(Command("version"))
+async def cmd_version(message: Message) -> None:
+    import datetime
+    import os as _os
+    code_dir = os.path.dirname(os.path.abspath(__file__))
+    mtime = _os.path.getmtime(_os.path.join(code_dir, "bot.py"))
+    updated = datetime.datetime.fromtimestamp(mtime).strftime("%d.%m.%Y %H:%M")
+    await message.answer(
+        f"{version_line()}\n"
+        f"Файл bot.py обновлён: {updated}"
+    )
+
+
 @dp.message(Command("status"))
 async def cmd_status(message: Message) -> None:
     subscribed = message.chat.id in state.subscribers
     last = state.last_lookup_id or "—"
     await message.answer(
         "📊 Статус\n"
+        f"{version_line()}\n"
         f"Подписка этого чата: {'✅ включена' if subscribed else '❌ выключена'}\n"
         f"Известных ШК: {len(state.seen_barcodes)}\n"
         f"Последний просмотренный ID: {last}\n"
@@ -653,6 +694,7 @@ async def main() -> None:
             BotCommand(command="ids", description="Настройка ID сотрудников"),
             BotCommand(command="access", description="Управление доступом пользователей"),
             BotCommand(command="help", description="Справка"),
+            BotCommand(command="version", description="Версия бота"),
         ]
     )
 
@@ -662,7 +704,8 @@ async def main() -> None:
     except Exception as e:  # noqa: BLE001
         log.warning("delete_webhook не выполнен: %s", e)
 
-    log.info("Бот запущен. Интервал опроса: %d сек.", config.POLL_INTERVAL)
+    log.info("Бот запущен. Версия: %s (код: %s). Интервал опроса: %d сек.",
+             config.BOT_VERSION, git_commit(), config.POLL_INTERVAL)
 
     monitor_task = asyncio.create_task(monitor_loop())
     try:
