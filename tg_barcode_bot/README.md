@@ -161,6 +161,20 @@ TARGET_EMPLOYEE_IDS=112946,5994498
 ```
 После изменения настроек перезапустите бота: `sudo systemctl restart barcode-bot`.
 
+## Приватный репозиторий на GitHub
+
+Приватность репозитория **никак не влияет** на работу бота: он читает Google Таблицу и общается с Telegram API, а код с GitHub подтягивает только скрипт `reinstall.sh`. Если после перевода репозитория в private «бот перестал работать», скорее всего просто остановился процесс/сервис — проверьте `systemctl status barcode-bot` и `journalctl -u barcode-bot -n 50`, затем `sudo systemctl restart barcode-bot`.
+
+Чтобы `reinstall.sh` мог клонировать приватный репозиторий:
+
+```bash
+# сохраните токен с доступом к коду (scope repo / granular token на TGWB)
+echo "ghp_XXXX..." | sudo tee /etc/barcode-bot-token && sudo chmod 600 /etc/barcode-bot-token
+sudo ./reinstall.sh
+```
+
+Скрипт использует токен для клона/пулла и не сохраняет его в git-конфиге. Либо можно задать разово: `sudo GITHUB_TOKEN=ghp_XXXX ./reinstall.sh`.
+
 ## Возможные доработки
 
 - Уведомления об **изменении статуса** существующих ШК (сейчас шлются только новые).
