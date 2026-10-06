@@ -656,6 +656,12 @@ async def main() -> None:
         ]
     )
 
+    # Сбрасываем webhook (если он был задан), иначе getUpdates/polling не получит апдейты.
+    try:
+        await bot.delete_webhook(drop_pending_updates=False)
+    except Exception as e:  # noqa: BLE001
+        log.warning("delete_webhook не выполнен: %s", e)
+
     log.info("Бот запущен. Интервал опроса: %d сек.", config.POLL_INTERVAL)
 
     monitor_task = asyncio.create_task(monitor_loop())
