@@ -1,5 +1,5 @@
-tg_barcode_bot/venv/
-__pycache__/
-*.pyc
 .env
 state.json
+venv/
+__pycache__/
+*.pyc
