@@ -75,5 +75,55 @@ async def fetch_barcodes(
     return result
 
 
+async def fetch_barcodes_by_employee(
+    session: aiohttp.ClientSession,
+    sheet_url: str,
+    barcode_column: str,
+    employee_id_column: str,
+    employee_id: str,
+) -> list[dict]:
+    """Возвращает ВСЕ строки таблицы для указанного ID сотрудника (без фильтра по статусу).
+
+    Каждый элемент — dict с полями: barcode, date, status, decision, name.
+    Отсортировано по дате создания (сначала новые); даты парсятся наудачу,
+    нераспознанные остаются в исходном порядке.
+    """
+    rows = await fetch_rows(session, sheet_url)
+    found = []
+    for row in rows:
+        if row.get(employee_id_column, "").strip() != employee_id:
+            continue
+        code = row.get(barcode_column, "")
+        if not code:
+            continue
+        found.append(
+            {
+                "barcode": code,
+                "date": row.get("Дата создания", ""),
+                "status": row.get("Статус", ""),
+                "decision": row.get("Решение по заявке", ""),
+                "name": row.get("ФИО", ""),
+            }
+        )
+
+    import datetime as _dt
+
+    def _parse_date(s: str):
+        s = (s or "").strip()
+        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+            try:
+                return _dt.datetime.strptime(s, fmt)
+            except ValueError:
+                pass
+        return None
+
+    parsed = [(_parse_date(x["date"]), x) for x in found]
+    with_dates = sorted(
+        (p for p in parsed if p[0] is not None), key=lambda p: p[0], reverse=True
+    )
+    without = [x for d, x in parsed if d is None]
+    return [x for _, x in with_dates] + without
+
+
 # Совместимость со старым именем
 fetch_new_barcodes = fetch_barcodes

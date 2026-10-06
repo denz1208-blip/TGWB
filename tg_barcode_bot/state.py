@@ -16,6 +16,10 @@ class State:
         self.seen_barcodes: set[str] = set()
         self.subscribers: set[int] = set()
         self.employee_ids: set[str] = set(initial_employee_ids or ())
+        # последний запрошенный ID сотрудника (запоминается навсегда)
+        self.last_lookup_id: str = ""
+        # последние отправленные уведомления {ШК: данные строки} (до 20, свежие в конце)
+        self.newest_notifications: dict[str, dict] = {}
         self._load()
 
     def _load(self) -> None:
@@ -28,6 +32,8 @@ class State:
             self.subscribers = set(data.get("subscribers", []))
             if "employee_ids" in data:
                 self.employee_ids = {str(x) for x in data["employee_ids"]}
+            self.last_lookup_id = str(data.get("last_lookup_id", "") or "")
+            self.newest_notifications = dict(data.get("newest_notifications", {}))
         except (json.JSONDecodeError, OSError):
             # повреждённый файл — начинаем с чистого листа
             pass
@@ -41,6 +47,8 @@ class State:
                         "seen_barcodes": sorted(self.seen_barcodes),
                         "subscribers": sorted(self.subscribers),
                         "employee_ids": sorted(self.employee_ids),
+                        "last_lookup_id": self.last_lookup_id,
+                        "newest_notifications": self.newest_notifications,
                     },
                     f,
                     ensure_ascii=False,
@@ -86,3 +94,16 @@ class State:
                 self.employee_ids.discard(x)
                 removed.append(x)
         return removed
+
+    # ---------------- Последние уведомления (лента «Мои новые ШК») ----------
+
+    MAX_NOTIFICATIONS = 20
+
+    def push_notification(self, barcode: str, row: dict) -> None:
+        """Добавляет отправленное уведомление в ленту последних (не более 20)."""
+        self.newest_notifications[barcode] = row
+        # обрезаем старые записи, если стало больше лимита
+        if len(self.newest_notifications) > self.MAX_NOTIFICATIONS:
+            extra = len(self.newest_notifications) - self.MAX_NOTIFICATIONS
+            for key in list(self.newest_notifications)[:extra]:
+                self.newest_notifications.pop(key, None)
