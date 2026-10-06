@@ -1,2 +1,9 @@
-# Logs and temp files
+# Python
+__pycache__/
+*.pyc
+
+# Application State
+tg_barcode_bot/state.json
+# Секреты и локальные артефакты (не коммитить!)
+.env
 *.log
