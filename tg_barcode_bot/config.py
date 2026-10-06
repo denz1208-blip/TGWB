@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Токен Telegram-бота, полученный у @BotFather
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Значение по умолчанию вшито; при наличии BOT_TOKEN в .env или окружении — берётся оно
+BOT_TOKEN = os.getenv(
+    "BOT_TOKEN",
+    "8545402880:AAGg_mvy-rbQKj0H5eVAFiTbNS2-8U7pEA0",
+)
 
 # Публичная ссылка на Google Таблицу (должна быть открыта по ссылке "Все, у кого есть ссылка")
 GOOGLE_SHEET_URL = os.getenv(

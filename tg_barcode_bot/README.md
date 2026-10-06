@@ -65,7 +65,28 @@ python bot.py
 
 Затем найдите бота в Telegram и отправьте `/start`.
 
-### 4. Автозапуск через systemd (продакшн)
+### 4. Автозапуск через systemd (продакшн) — одна команда
+
+Токен бота уже вшит в `config.py` и `.env`, настраивать ничего не нужно:
+
+```bash
+sudo ./install.sh
+```
+
+Скрипт сам: установит зависимости, скопирует проект в `/opt/tg_barcode_bot`,
+создаст venv, зарегистрирует сервис `barcode-bot` с автозапуском при загрузке
+и перезапуском при падении, затем запустит бота.
+
+Управление:
+```bash
+sudo systemctl status barcode-bot    # состояние
+sudo systemctl restart barcode-bot   # перезапуск
+sudo systemctl stop barcode-bot      # остановка
+journalctl -u barcode-bot -f         # живые логи
+```
+
+<details>
+<summary>Ручная установка (альтернатива)</summary>
 
 ```bash
 sudo mkdir -p /opt/tg_barcode_bot
@@ -73,16 +94,13 @@ sudo cp -r . /opt/tg_barcode_bot
 cd /opt/tg_barcode_bot
 sudo python3 -m venv venv
 sudo venv/bin/pip install -r requirements.txt
-sudo nano .env                       # токен
-sudo nano barcode-bot.service        # поправьте User= под себя
-
+sudo sed -i "s|^User=.*|User=$(whoami)|" barcode-bot.service
 sudo cp barcode-bot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now barcode-bot
-
-# логи
 journalctl -u barcode-bot -f
 ```
+</details>
 
 ## Настройки (.env)
 
