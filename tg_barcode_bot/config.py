@@ -26,3 +26,15 @@ STATE_FILE = os.getenv("STATE_FILE", os.path.join(os.path.dirname(__file__), "st
 
 # Колонка со штрихкодами в таблице
 BARCODE_COLUMN = os.getenv("BARCODE_COLUMN", "ШК")
+
+# Колонка со статусом (уведомления только если она пустая)
+STATUS_COLUMN = os.getenv("STATUS_COLUMN", "Статус")
+
+# Колонка с ID сотрудника (ФИО/данные подтягиваются из строки таблицы)
+EMPLOYEE_ID_COLUMN = os.getenv("EMPLOYEE_ID_COLUMN", "ID")
+
+# Список ID сотрудников, за которыми следим (через запятую).
+# Пусто = следить за всеми. Пример: "112946,5994498"
+TARGET_EMPLOYEE_IDS: set[str] = {
+    x.strip() for x in os.getenv("TARGET_EMPLOYEE_IDS", "").split(",") if x.strip()
+}

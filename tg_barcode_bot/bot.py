@@ -19,7 +19,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 import config
-from sheet import fetch_new_barcodes
+from sheet import fetch_barcodes
 from state import State
 
 logging.basicConfig(
@@ -47,13 +47,30 @@ bot: Bot = None  # инициализируется в main()
 HELP_TEXT = (
     "🔎 <b>Бот отслеживания новых ШК</b>\n\n"
     f"Слежу за таблицей: {config.GOOGLE_SHEET_URL}\n\n"
-    "<b>Команды:</b>\n"
+    "<b>Фильтр уведомлений:</b>\n"
+    "• Статус строки пустой\n"
+    + (
+        "• ID сотрудника: "
+        + ", ".join(f"<code>{x}</code>" for x in sorted(config.TARGET_EMPLOYEE_IDS))
+        if config.TARGET_EMPLOYEE_IDS
+        else "• За всеми сотрудниками\n"
+    )
+    + "\n<b>Команды:</b>\n"
     "/start — включить уведомления\n"
     "/stop — выключить уведомления\n"
     "/status — текущий статус\n"
+    "/id — ваш Telegram ID\n"
     "/help — эта справка\n\n"
     f"Проверка таблицы выполняется каждые {config.POLL_INTERVAL} сек."
 )
+
+
+@dp.message(Command("id"))
+async def cmd_id(message: Message) -> None:
+    await message.answer(
+        f"Ваш Telegram ID: <code>{message.from_user.id}</code>",
+        parse_mode="HTML",
+    )
 
 
 @dp.message(CommandStart())
@@ -84,11 +101,14 @@ async def cmd_stop(message: Message) -> None:
 @dp.message(Command("status"))
 async def cmd_status(message: Message) -> None:
     subscribed = message.chat.id in state.subscribers
+    ids = ", ".join(sorted(config.TARGET_EMPLOYEE_IDS)) if config.TARGET_EMPLOYEE_IDS else "все"
     await message.answer(
         "📊 <b>Статус</b>\n"
         f"Подписка этого чата: {'✅ включена' if subscribed else '❌ выключена'}\n"
         f"Известных ШК: <code>{len(state.seen_barcodes)}</code>\n"
         f"Всего подписчиков: <code>{len(state.subscribers)}</code>\n"
+        f"ID сотрудников: <code>{ids}</code>\n"
+        f"Фильтр: только с пустым статусом «{config.STATUS_COLUMN}»\n"
         f"Интервал проверки: <code>{config.POLL_INTERVAL}</code> сек."
     )
 
@@ -131,9 +151,16 @@ async def send_to_subscribers(text: str) -> None:
 
 
 async def poll_sheet(session: aiohttp.ClientSession) -> None:
-    """Один цикл проверки таблицы: находит новые ШК и рассылает их."""
+    """Один цикл проверки таблицы: находит новые подходящие ШК и рассылает их."""
     try:
-        known = await fetch_new_barcodes(session, config.GOOGLE_SHEET_URL, config.BARCODE_COLUMN)
+        known = await fetch_barcodes(
+            session,
+            config.GOOGLE_SHEET_URL,
+            config.BARCODE_COLUMN,
+            status_column=config.STATUS_COLUMN,
+            employee_id_column=config.EMPLOYEE_ID_COLUMN,
+            target_employee_ids=config.TARGET_EMPLOYEE_IDS,
+        )
     except Exception as e:  # noqa: BLE001
         log.error("Ошибка чтения таблицы: %s", e)
         return
@@ -147,11 +174,11 @@ async def poll_sheet(session: aiohttp.ClientSession) -> None:
     if first_run:
         # Первый запуск: запоминаем всё существующее, ничего не рассылаем
         state.save()
-        log.info("Первый запуск: запомнено %d существующих ШК", len(known))
+        log.info("Первый запуск: запомнено %d подходящих ШК", len(known))
         return
 
     if new_codes:
-        log.info("Найдено новых ШК: %d", len(new_codes))
+        log.info("Найдено новых подходящих ШК: %d", len(new_codes))
         for code in new_codes:
             await send_to_subscribers(format_barcode_message(code, known[code]))
             await asyncio.sleep(0.1)  # бережём лимиты Telegram API

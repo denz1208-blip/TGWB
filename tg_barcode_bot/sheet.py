@@ -41,12 +41,39 @@ async def fetch_rows(session: aiohttp.ClientSession, sheet_url: str) -> list[dic
     return rows
 
 
-async def fetch_new_barcodes(session: aiohttp.ClientSession, sheet_url: str, barcode_column: str):
-    """Возвращает множество непустых ШК из указанной колонки и словарь ШК -> данные строки."""
+async def fetch_barcodes(
+    session: aiohttp.ClientSession,
+    sheet_url: str,
+    barcode_column: str,
+    status_column: str = "",
+    employee_id_column: str = "",
+    target_employee_ids: set[str] | None = None,
+) -> dict[str, dict]:
+    """Возвращает словарь ШК -> данные строки с учётом фильтров.
+
+    Фильтры (применяются к строкам таблицы):
+      * строка должна иметь непустой ШК;
+      * если задан ``status_column`` — колонка статуса должна быть ПУСТОЙ;
+      * если заданы ``employee_id_column`` и непустой ``target_employee_ids`` —
+        ID сотрудника в строке должен входить в список (пустой список = без фильтра).
+    """
     rows = await fetch_rows(session, sheet_url)
-    known: dict[str, dict] = {}
+    result: dict[str, dict] = {}
     for row in rows:
         code = row.get(barcode_column, "")
-        if code:
-            known[code] = row
-    return known
+        if not code:
+            continue
+        # Фильтр по пустому статусу
+        if status_column and row.get(status_column, "").strip():
+            continue
+        # Фильтр по ID сотрудника
+        if target_employee_ids and employee_id_column:
+            emp_id = row.get(employee_id_column, "").strip()
+            if emp_id not in target_employee_ids:
+                continue
+        result[code] = row
+    return result
+
+
+# Совместимость со старым именем
+fetch_new_barcodes = fetch_barcodes
