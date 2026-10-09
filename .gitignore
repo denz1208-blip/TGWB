@@ -1,10 +1,6 @@
-# Compiled/Binary files
+# Python compiled files
 __pycache__/
 *.pyc
 
-# Dependency directories
-venv/
-.venv/
-
-# System/Environment files
+# Environment variables
 .env
