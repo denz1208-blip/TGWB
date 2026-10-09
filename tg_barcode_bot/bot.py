@@ -28,6 +28,10 @@ import config
 from sheet import fetch_barcodes, fetch_barcodes_by_employee
 from state import State
 
+# Версия бота. Увеличивайте при каждом изменении кода!
+# Отображается в /help, /status, /version и в логе запуска.
+BOT_VERSION = "2.1.2"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",

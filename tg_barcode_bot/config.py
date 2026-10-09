@@ -49,6 +49,9 @@ ALLOWED_USER_IDS: set[int] = {
     int(x.strip()) for x in os.getenv("ALLOWED_USER_IDS", "").split(",") if x.strip().isdigit()
 }
 
-# Версия бота. Увеличивайте при каждом изменении кода — она показывается
-# в /help и /status, чтобы было видно, обновился ли бот после переустановки.
-BOT_VERSION = os.getenv("BOT_VERSION", "2.1.1")
+# Версия бота. Показывается в /help, /status, /version и в логе запуска.
+# Раньше читалась через os.getenv("BOT_VERSION", ...) — и пустая строка
+# BOT_VERSION= в .env делала версию пустой («Версия:  (код: ?)»).
+# Теперь env-файл её НЕ перекрывает: актуальная версия всегда в коде.
+# При каждом изменении кода увеличивайте номер И в config.py, и в bot.py.
+BOT_VERSION = "2.1.2"
