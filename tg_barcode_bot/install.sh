@@ -18,11 +18,28 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 echo "==> Копирование проекта в /opt/tg_barcode_bot..."
+# Сохраняем локальные файлы сервера, чтобы cp их не перезаписал
+if [ -f /opt/tg_barcode_bot/.env ]; then
+    cp /opt/tg_barcode_bot/.env /tmp/barcode-bot.env.backup
+fi
+if [ -f /opt/tg_barcode_bot/state.json ]; then
+    cp /opt/tg_barcode_bot/state.json /tmp/barcode-bot-state.backup.json
+fi
 mkdir -p /opt/tg_barcode_bot
-cp -r "$PROJECT_DIR"/. /opt/tg_barcode_bot/
+# Копируем только файлы проекта; служебные каталоги (.git, venv, __pycache__) не трогаем
+find "$PROJECT_DIR" -maxdepth 1 -type f -exec cp {} /opt/tg_barcode_bot/ \;
 cd /opt/tg_barcode_bot
+# Возвращаем .env сервера (в репозитории его может не быть или он может отличаться)
+if [ -f /tmp/barcode-bot.env.backup ]; then
+    cp /tmp/barcode-bot.env.backup /opt/tg_barcode_bot/.env
+fi
 
 echo "==> Создание виртуального окружения и установка библиотек..."
+# Если venv битый (например, скопирован с другой машины), пересоздаём его
+if [ -e venv/bin/python3 ] && ! venv/bin/python3 --version >/dev/null 2>&1; then
+    echo "!! Существующее venv нерабочее — пересоздаю..."
+    rm -rf venv
+fi
 python3 -m venv venv
 ./venv/bin/pip install --quiet --upgrade pip
 ./venv/bin/pip install --quiet -r requirements.txt

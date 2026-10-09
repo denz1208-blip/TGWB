@@ -66,9 +66,19 @@ if [ -f /opt/tg_barcode_bot/state.json ]; then
     cp /opt/tg_barcode_bot/state.json /tmp/state.backup.json
 fi
 
-sudo ./install.sh
+# подтягиваем актуальный install.sh из свежего кода (в /opt может лежать старая версия)
+cp -f "$SRC_DIR/tg_barcode_bot/install.sh" /opt/tg_barcode_bot/install.sh 2>/dev/null || true
+chmod +x install.sh
 
-if [ -f /tmp/state.backup.json ] && [ ! -f /opt/tg_barcode_bot/state.json ]; then
+# если в /opt попал битый venv (симлинки на чужую машину) — удаляем, install.sh создаст новый
+if [ -d /opt/tg_barcode_bot/venv ] && ! /opt/tg_barcode_bot/venv/bin/python3 --version >/dev/null 2>&1; then
+    echo "!! Найден нерабочий venv в /opt/tg_barcode_bot — удаляю, будет создан заново."
+    rm -rf /opt/tg_barcode_bot/venv
+fi
+
+./install.sh
+
+if [ -f /tmp/state.backup.json ]; then
     cp /tmp/state.backup.json /opt/tg_barcode_bot/state.json
     systemctl restart barcode-bot
     echo "(восстановлен state.json из резервной копии)"
