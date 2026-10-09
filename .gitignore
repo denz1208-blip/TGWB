@@ -1,9 +1,10 @@
-# Python
+# Compiled/Binary files
 __pycache__/
 *.pyc
 
-# Application State
-tg_barcode_bot/state.json
-# Секреты и локальные артефакты (не коммитить!)
+# Dependency directories
+venv/
+.venv/
+
+# System/Environment files
 .env
-*.log

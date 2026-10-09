@@ -130,17 +130,6 @@ def main_kb(subscribed: bool) -> ReplyKeyboardMarkup:
     )
 
 
-def yes_no_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Да", callback_data="sub:on"),
-                InlineKeyboardButton(text="❌ Нет", callback_data="sub:off"),
-            ]
-        ]
-    )
-
-
 def lookup_kb(ids: list[str]) -> InlineKeyboardMarkup:
     """Inline-кнопки «🔎 {ID}» для быстрого просмотра последних ШК по ID."""
     rows = [[InlineKeyboardButton(text=f"🔎 {x}", callback_data=f"look:{x}")] for x in ids[:10]]
@@ -551,8 +540,6 @@ def format_barcode_message(barcode: str, row: dict) -> str:
         value = row.get(name, "")
         if value:
             lines.append(f"{icon} {name}: {value}")
-    lines.append("")
-    lines.append("Хотите получать такие сообщения?")
     return "\n".join(lines)
 
 
@@ -598,7 +585,7 @@ async def poll_sheet(session: aiohttp.ClientSession) -> None:
         log.info("Найдено новых подходящих ШК: %d", len(new_codes))
         for code in new_codes:
             state.push_notification(code, known[code])
-            await send_to_subscribers(format_barcode_message(code, known[code]), yes_no_kb())
+            await send_to_subscribers(format_barcode_message(code, known[code]))
             await asyncio.sleep(0.1)  # бережём лимиты Telegram API
         state.save()
 
@@ -610,26 +597,7 @@ async def monitor_loop() -> None:
             await asyncio.sleep(config.POLL_INTERVAL)
 
 
-# --------------------------- Inline-кнопки Да/Нет ----------------------------
-
-@dp.callback_query(F.data == "sub:on")
-async def cb_sub_on(call: CallbackQuery) -> None:
-    state.subscribe(int(call.message.chat.id))
-    state.save()
-    await call.message.edit_text(
-        f"✅ Подписка включена!\n{filter_line()}\n"
-        "Буду присылать новые ШК с пустым статусом для этих ID."
-    )
-    await call.answer("Подписка включена")
-
-
-@dp.callback_query(F.data == "sub:off")
-async def cb_sub_off(call: CallbackQuery) -> None:
-    state.unsubscribe(int(call.message.chat.id))
-    state.save()
-    await call.message.edit_text("🔕 Ок, подписку не включаю. Вернуть — кнопка «🔔 Включить».")
-    await call.answer("Подписка не включена")
-
+# ------------------------------ Inline-кнопки --------------------------------
 
 @dp.callback_query(F.data.startswith("look:"))
 async def cb_lookup(call: CallbackQuery) -> None:

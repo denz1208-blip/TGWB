@@ -183,6 +183,32 @@ sudo ./reinstall.sh
 
 Скрипт использует токен для клона/пулла и не сохраняет его в git-конфиге. Либо можно задать разово: `sudo GITHUB_TOKEN=ghp_XXXX ./reinstall.sh`.
 
+⚠️ Если токен где-то засветился (чат, скриншот) — отзовите его на GitHub:
+Settings → Developer settings → Personal access tokens → Delete, затем создайте новый.
+
+## Обновление файлов на сервере
+
+`/opt/tg_barcode_bot` — это НЕ git-клон, а копия файлов, поэтому `git pull` там не работает
+(«fatal: not a git repository»). Способы обновления:
+
+**Способ 1 (рекомендуется): reinstall.sh** — сам клонирует свежий код с GitHub и переустанавливает сервис:
+```bash
+cd /opt/tg_barcode_bot && sudo ./reinstall.sh
+```
+
+**Способ 2: загрузить изменённые файлы со своего компьютера** (если нет доступа к GitHub):
+```bash
+# выполнить со своего компьютера (Windows: PowerShell), файл подтянется на сервер
+scp bot.py config.py root@АДРЕС_СЕРВЕРА:/opt/tg_barcode_bot/
+# затем на сервере:
+systemctl restart barcode-bot
+```
+
+**Способ 3: отредактировать прямо на сервере** через `nano /opt/tg_barcode_bot/bot.py`,
+после чего `systemctl restart barcode-bot`.
+
+Проверить, что обновилось: отправить боту `/version` (или `/help`).
+
 ## Возможные доработки
 
 - Уведомления об **изменении статуса** существующих ШК (сейчас шлются только новые).
