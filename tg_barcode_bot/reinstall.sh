@@ -71,9 +71,12 @@ cp -f "$SRC_DIR/tg_barcode_bot/install.sh" /opt/tg_barcode_bot/install.sh 2>/dev
 chmod +x install.sh
 
 # если в /opt попал битый venv (симлинки на чужую машину) — удаляем, install.sh создаст новый
-if [ -d /opt/tg_barcode_bot/venv ] && ! /opt/tg_barcode_bot/venv/bin/python3 --version >/dev/null 2>&1; then
-    echo "!! Найден нерабочий venv в /opt/tg_barcode_bot — удаляю, будет создан заново."
-    rm -rf /opt/tg_barcode_bot/venv
+if [ -d /opt/tg_barcode_bot/venv ]; then
+    if ! /opt/tg_barcode_bot/venv/bin/python3 --version >/dev/null 2>&1 || \
+       ! /opt/tg_barcode_bot/venv/bin/python --version >/dev/null 2>&1; then
+        echo "!! Найден нерабочий venv в /opt/tg_barcode_bot — удаляю, будет создан заново."
+        rm -rf /opt/tg_barcode_bot/venv
+    fi
 fi
 
 ./install.sh

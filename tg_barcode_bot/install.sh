@@ -27,7 +27,9 @@ if [ -f /opt/tg_barcode_bot/state.json ]; then
 fi
 mkdir -p /opt/tg_barcode_bot
 # Копируем только файлы проекта; служебные каталоги (.git, venv, __pycache__) не трогаем
-find "$PROJECT_DIR" -maxdepth 1 -type f -exec cp {} /opt/tg_barcode_bot/ \;
+if [ "$PROJECT_DIR" != "/opt/tg_barcode_bot" ]; then
+    find "$PROJECT_DIR" -maxdepth 1 -type f -exec cp {} /opt/tg_barcode_bot/ \;
+fi
 cd /opt/tg_barcode_bot
 # Возвращаем .env сервера (в репозитории его может не быть или он может отличаться)
 if [ -f /tmp/barcode-bot.env.backup ]; then
@@ -35,8 +37,15 @@ if [ -f /tmp/barcode-bot.env.backup ]; then
 fi
 
 echo "==> Создание виртуального окружения и установка библиотек..."
-# Если venv битый (например, скопирован с другой машины), пересоздаём его
-if [ -e venv/bin/python3 ] && ! venv/bin/python3 --version >/dev/null 2>&1; then
+# Если venv битый (например, был закоммичен в git или скопирован с другой машины),
+# пересоздаём его. Проверяем и python3, и python (в venv они разные симлинки).
+venv_broken=0
+if [ -d venv ]; then
+    for p in venv/bin/python3 venv/bin/python; do
+        if [ -e "$p" ] && ! "$p" --version >/dev/null 2>&1; then venv_broken=1; fi
+    done
+fi
+if [ "$venv_broken" = "1" ]; then
     echo "!! Существующее venv нерабочее — пересоздаю..."
     rm -rf venv
 fi
