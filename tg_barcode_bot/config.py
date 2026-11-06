@@ -34,10 +34,17 @@ STATUS_COLUMN = os.getenv("STATUS_COLUMN", "Статус")
 EMPLOYEE_ID_COLUMN = os.getenv("EMPLOYEE_ID_COLUMN", "ID")
 
 # Список ID сотрудников, за которыми следим (через запятую).
-# Пусто = следить за всеми. Пример: "112946,5994498"
+# По умолчанию следим за ID 5978877; можно переопределить в .env
+# (TARGET_EMPLOYEE_IDS=...) или из Telegram через 👥 Отслеживание / /ids clear.
+DEFAULT_TARGET_EMPLOYEE_IDS = "5978877"
+
 TARGET_EMPLOYEE_IDS: set[str] = {
-    x.strip() for x in os.getenv("TARGET_EMPLOYEE_IDS", "").split(",") if x.strip()
+    x.strip() for x in os.getenv("TARGET_EMPLOYEE_IDS", DEFAULT_TARGET_EMPLOYEE_IDS).split(",") if x.strip()
 }
+
+# ID сотрудника по умолчанию для поиска ШК (кнопка «🔎 Поиск по ID»):
+# если ID не remembered и не введён — ищем по нему.
+DEFAULT_LOOKUP_EMPLOYEE_ID = os.getenv("DEFAULT_LOOKUP_EMPLOYEE_ID", "5978877").strip()
 
 # ------------------------- Ограничение доступа -------------------------------
 # Белый список Telegram ID пользователей, которым разрешено пользоваться ботом.
@@ -54,4 +61,4 @@ ALLOWED_USER_IDS: set[int] = {
 # BOT_VERSION= в .env делала версию пустой («Версия:  (код: ?)»).
 # Теперь env-файл её НЕ перекрывает: актуальная версия всегда в коде.
 # При каждом изменении кода увеличивайте номер И в config.py, и в bot.py.
-BOT_VERSION = "2.1.3"
+BOT_VERSION = "2.1.4"

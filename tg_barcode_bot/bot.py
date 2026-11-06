@@ -30,7 +30,7 @@ from state import State
 
 # Версия бота. Увеличивайте при каждом изменении кода!
 # Отображается в /help, /status, /version и в логе запуска.
-BOT_VERSION = "2.1.3"
+BOT_VERSION = "2.1.4"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -391,6 +391,16 @@ async def cmd_access(message: Message) -> None:
 
 @dp.message(F.text == "🔎 Поиск по ID")
 async def kb_search_ask(message: Message) -> None:
+    # По умолчанию сразу ищем ШК по ID из config.DEFAULT_LOOKUP_EMPLOYEE_ID.
+    default_id = config.DEFAULT_LOOKUP_EMPLOYEE_ID
+    if default_id:
+        waiting_for_lookup.add(message.chat.id)
+        await message.answer(
+            f"🔎 Ищу по умолчанию ШК для ID {default_id}…\n"
+            "Чтобы искать по другому ID — просто отправьте его числом.",
+        )
+        await do_lookup(message, default_id)
+        return
     remembered = f" Последний запрошенный ID: {state.last_lookup_id}" if state.last_lookup_id else ""
     await message.answer(
         "🔎 Введите ID сотрудника из таблицы — покажу последние "
@@ -469,8 +479,14 @@ async def do_lookup(message: Message, emp_id: str) -> None:
 
     msg = await message.answer(f"⏳ Ищу ШК для ID {emp_id}…")
     text = await build_lookup_text(emp_id)
-    await msg.edit_text(
-        text,
+    # edit_text поддерживает только inline-клавиатуру, обычную кнопку — удаляем,
+    # затем отправляем ReplyKeyboardMarkup отдельным сообщением (если текст изменился).
+    try:
+        await msg.edit_text(text)
+    except Exception:  # noqa: BLE001  # "message is not modified" и т.п.
+        pass
+    await message.answer(
+        "Меню:",
         reply_markup=main_kb(message.chat.id in state.subscribers),
     )
 
