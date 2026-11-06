@@ -629,7 +629,10 @@ async def cb_lookup(call: CallbackQuery) -> None:
 @dp.callback_query(F.data.startswith("track:"))
 async def cb_track(call: CallbackQuery) -> None:
     emp_id = call.data.split(":", 1)[1]
-    added = state.add_employee_ids([emp_id])
+    # при добавлении нового ID заменяем весь список отслеживания,
+    # чтобы по умолчанию всегда оставался только последний выбранный сотрудник
+    state.employee_ids = {emp_id}
+    added = [emp_id]
     state.save()
     await call.answer(
         "Добавлено в отслеживание" if added else "Уже отслеживается"
