@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
-![Version](https://img.shields.io/badge/version-3.1.0-brightgreen)
+![Version](https://img.shields.io/badge/version-3.2.0-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux&logoColor=black)
 ![Polling](https://img.shields.io/badge/mode-polling-important)
 
@@ -20,6 +20,7 @@
 
 | Возможность | Описание |
 |-------------|----------|
+| ⚡ Простой токен | `sudo ./setup.sh` сам спросит токен и создаст `.env` — редактировать файл не нужно. |
 | 👤 Личный аккаунт | Создаётся автоматически при первом сообщении боту. Ключ — Telegram ID. |
 | 🎯 Свои ID сотрудников | Каждый пользователь настраивает свой список фильтров. |
 | 📬 Свои уведомления | Только ваши новые ШК, только с пустым статусом, только в ваши чаты. |
@@ -36,11 +37,11 @@
 # 1. Клонировать репозиторий
 sudo git clone https://github.com/denz1208-blip/TGWB.git /opt/TGWB_src
 
-# 2. Настроить токен бота (получить у @BotFather)
-sudo nano /opt/TGWB_src/tg_barcode_bot/.env
+# 2. Ввести токен — .env создастся сам (файл редактировать НЕ нужно)
+cd /opt/TGWB_src/tg_barcode_bot
+sudo ./setup.sh
 
 # 3. Установить и запустить как сервис
-cd /opt/TGWB_src/tg_barcode_bot
 sudo ./install.sh
 
 # 4. Проверить
@@ -82,6 +83,7 @@ TGWB/
     ├── requirements.txt
     ├── .env.example
     ├── barcode-bot.service
+    ├── setup.sh / setup.bat / setup.ps1  # ввод токена одной командой
     └── install.sh / reinstall.sh / update.sh / watchdog.sh / start.sh
 ```
 

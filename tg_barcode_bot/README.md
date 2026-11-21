@@ -33,7 +33,8 @@ tg_barcode_bot/
 ├── config.py            # настройки из .env
 ├── state.json           # состояние (создаётся автоматически, НЕ хранить в git)
 ├── requirements.txt
-├── .env.example         # шаблон настроек (токен НЕ вшит в код!)
+├── .env.example         # минимальный шаблон (токен НЕ вшит в код!)
+├── setup.sh / setup.bat / setup.ps1  # ввод токена без редактирования .env
 ├── barcode-bot.service  # unit-файл systemd
 └── install.sh / reinstall.sh / update.sh / watchdog.sh
 ```
@@ -121,7 +122,7 @@ tg_barcode_bot/
 ### 1. Токен бота
 
 [@BotFather](https://t.me/BotFather) → `/newbot` → скопируйте токен.
-Токен **не хранится в коде** — задайте его в `.env`:
+Токен **не хранится в коде**, и файл `.env` не нужно редактировать вручную:
 
 ```bash
 cd tg_barcode_bot
@@ -129,9 +130,12 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-cp .env.example .env
-nano .env          # вставьте BOT_TOKEN (и при необходимости GOOGLE_SHEET_URL)
+./setup.sh          # спросит токен и создаст .env
+# или сразу:  ./setup.sh "123456789:AA..."
 ```
+
+На Windows запустите `setup.bat`. Если просто запустить `python bot.py` без токена,
+бот сам спросит его в консоли и сохранит в `.env`.
 
 > ⚠️ Таблица должна быть открыта «Все, у кого есть ссылка — просмотрщик»,
 > иначе CSV-экспорт не скачается.

@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 
 import aiohttp
 from aiogram import Bot, Dispatcher, F
@@ -33,7 +34,7 @@ from sheet import fetch_rows, normalize_sheet_url
 from state import Account, State
 
 # Версия бота. Увеличивайте при каждом изменении кода!
-BOT_VERSION = "3.1.0"
+BOT_VERSION = "3.2.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -237,11 +238,47 @@ def help_text(acc: Account) -> str:
     )
 
 
+def _save_token_to_env(token: str) -> None:
+    """Записать токен в .env рядом с bot.py, не перезаписывая другие настройки."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    lines = []
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    replaced = False
+    for i, line in enumerate(lines):
+        if line.strip().startswith("BOT_TOKEN="):
+            lines[i] = f"BOT_TOKEN={token}"
+            replaced = True
+            break
+    if not replaced:
+        lines.insert(0, f"BOT_TOKEN={token}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def _validate_token() -> None:
-    if not config.BOT_TOKEN:
-        raise SystemExit(
-            "BOT_TOKEN не задан. Скопируйте .env.example в .env и укажите токен от @BotFather."
-        )
+    if config.BOT_TOKEN:
+        return
+    # Локальный запуск: просто спрашиваем токен в консоли и сохраняем его.
+    if sys.stdin.isatty():
+        print("Токен бота не найден. Получите его у @BotFather (/newbot).")
+        token = input("Вставьте токен: ").strip()
+        if token:
+            _save_token_to_env(token)
+            config.BOT_TOKEN = token
+            print("✅ Токен сохранён в .env рядом с bot.py")
+            return
+    raise SystemExit(
+        "BOT_TOKEN не задан. Запустите один раз:\n"
+        "  Linux:  sudo ./setup.sh\n"
+        "  Windows: setup.bat\n"
+        "или задайте BOT_TOKEN в .env вручную."
+    )
 
 
 # ------------------------------ Команды --------------------------------------
