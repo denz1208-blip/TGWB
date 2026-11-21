@@ -2,12 +2,26 @@
 import csv
 import io
 import re
+from urllib.parse import urlparse
 
 import aiohttp
 
 # Регулярка для извлечения ID таблицы и gid из ссылки
 _SHEET_ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9-_]+)")
 _GID_RE = re.compile(r"gid=(\d+)")
+
+
+def normalize_sheet_url(sheet_url: str) -> str:
+    """Проверить и нормализовать ссылку на Google-таблицу пользователя."""
+    url = (sheet_url or "").strip()
+    if not url.lower().startswith(("https://", "http://")):
+        raise ValueError("Нужна ссылка, начинающаяся с https://")
+    host = (urlparse(url).hostname or "").lower()
+    if host != "docs.google.com" and not host.endswith(".docs.google.com"):
+        raise ValueError("Разрешены только ссылки docs.google.com")
+    if not _SHEET_ID_RE.search(url):
+        raise ValueError("Не похоже на ссылку Google Таблицы (/spreadsheets/d/...)")
+    return url
 
 
 def build_csv_export_url(sheet_url: str) -> str:
