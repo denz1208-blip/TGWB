@@ -50,6 +50,8 @@ class Account:
         self.last_lookup_id: str = ""
         self.sheet_url: str = ""  # пусто = использовать config.GOOGLE_SHEET_URL
         self.initialized: bool = False  # был ли уже первый опрос таблицы
+        # Дневная статистика: {"2026-11-21": {"total": 5, "in_work": 3}}
+        self.daily_stats: dict[str, dict] = {}
         self.created_at: str = _now()
 
     # ----------------------------- Сериализация ------------------------------
@@ -64,6 +66,7 @@ class Account:
             "last_lookup_id": self.last_lookup_id,
             "sheet_url": self.sheet_url,
             "initialized": self.initialized,
+            "daily_stats": self.daily_stats,
             "created_at": self.created_at,
         }
 
@@ -76,6 +79,14 @@ class Account:
         acc.last_lookup_id = str(data.get("last_lookup_id", "") or "")
         acc.sheet_url = str(data.get("sheet_url", "") or "")
         acc.initialized = bool(data.get("initialized", acc.initialized))
+        raw_stats = data.get("daily_stats", {})
+        if isinstance(raw_stats, dict):
+            for day, values in raw_stats.items():
+                if isinstance(values, dict):
+                    acc.daily_stats[str(day)] = {
+                        "total": int(values.get("total", 0) or 0),
+                        "in_work": int(values.get("in_work", 0) or 0),
+                    }
         acc.created_at = str(data.get("created_at", "") or acc.created_at)
         return acc
 
@@ -145,10 +156,44 @@ class Account:
                 self.newest_notifications.pop(key, None)
 
     def reset_tracking(self) -> None:
-        """Сбросить известные ШК (например, при смене таблицы)."""
+        """Сбросить известные ШК (например, при смене таблицы).
+
+        История дневной статистики сохраняется: она относится к пользователю,
+        а не к конкретной таблице.
+        """
         self.seen_barcodes.clear()
         self.newest_notifications.clear()
         self.initialized = False
+
+    # ----------------------- Дневная статистика --------------------------------
+
+    MAX_STAT_DAYS = 60
+
+    def _day_record(self, day: str) -> dict:
+        rec = self.daily_stats.setdefault(day, {"total": 0, "in_work": 0})
+        rec.setdefault("total", 0)
+        rec.setdefault("in_work", 0)
+        return rec
+
+    def _prune_stats(self) -> None:
+        if len(self.daily_stats) > self.MAX_STAT_DAYS:
+            for day in sorted(self.daily_stats)[:-self.MAX_STAT_DAYS]:
+                self.daily_stats.pop(day, None)
+
+    def add_daily_total(self, day: str, count: int = 1) -> None:
+        """Учесть новые ШК, обнаруженные за указанный день (YYYY-MM-DD)."""
+        if count <= 0:
+            return
+        self._day_record(day)["total"] += int(count)
+        self._prune_stats()
+
+    def set_daily_in_work(self, day: str, count: int) -> None:
+        """Запомнить, сколько ШК сейчас со статусом «в работе»."""
+        self._day_record(day)["in_work"] = max(0, int(count))
+        self._prune_stats()
+
+    def day_stats(self, day: str) -> dict:
+        return dict(self._day_record(day))
 
 
 class State:

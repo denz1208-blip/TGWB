@@ -38,7 +38,7 @@ if [ -d "$SRC_DIR/.git" ]; then
     git -C "$SRC_DIR" reset --hard origin/main
     # не оставляем токен в конфиге клона
     git -C "$SRC_DIR" remote set-url origin "$REPO_URL"
-elif [ -f /opt/tg_barcode_bot/bot.py ] && grep -q 'BOT_VERSION = "3.0.0"' /opt/tg_barcode_bot/bot.py 2>/dev/null; then
+elif [ -f /opt/tg_barcode_bot/bot.py ] && grep -q 'BOT_VERSION = "3.1.0"' /opt/tg_barcode_bot/bot.py 2>/dev/null; then
     # Клон отсутствует, но код в /opt/tg_barcode_bot уже свежей версии —
     # GitHub недоступен (приватный репо/нет токена). Обновляем сервис на месте.
     echo "!! Клон $SRC_DIR не найден, но текущий код уже актуален — обновление с GitHub пропускаю."

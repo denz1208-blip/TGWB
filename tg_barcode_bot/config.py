@@ -53,4 +53,4 @@ ALLOWED_USER_IDS: set[int] = {
 }
 
 # Версия бота. Увеличивайте при каждом изменении кода (и в bot.py).
-BOT_VERSION = "3.0.0"
+BOT_VERSION = "3.1.0"

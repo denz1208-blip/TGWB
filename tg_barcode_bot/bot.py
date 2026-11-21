@@ -10,6 +10,7 @@
 Интерфейс — reply-клавиатура + inline-кнопки, текст без HTML-разметки.
 """
 import asyncio
+import datetime
 import logging
 import os
 import re
@@ -32,7 +33,7 @@ from sheet import fetch_rows, normalize_sheet_url
 from state import Account, State
 
 # Версия бота. Увеличивайте при каждом изменении кода!
-BOT_VERSION = "3.0.0"
+BOT_VERSION = "3.1.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -145,7 +146,7 @@ def main_kb(acc: Account) -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🆕 Мои новые ШК"), KeyboardButton(text=sub_btn)],
             [KeyboardButton(text="🔎 Поиск по ID"), KeyboardButton(text="👥 Отслеживание")],
-            [KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="ℹ️ Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -169,6 +170,34 @@ def filter_line(acc: Account) -> str:
 
 def sheet_line(acc: Account) -> str:
     return "Ваша таблица: своя (/sheet)" if acc.sheet_url else "Ваша таблица: общая (/sheet)"
+
+
+def today_key() -> str:
+    return datetime.date.today().isoformat()
+
+
+def stats_text(acc: Account) -> str:
+    """Текст дневной статистики пользователя (последние 7 дней)."""
+    days = sorted(acc.daily_stats, reverse=True)[:7]
+    lines = ["📊 Ваша статистика по ШК", ""]
+    if not days:
+        lines.append("Данных пока нет — как только появятся новые ШК, статистика начнёт вестись.")
+        return "\n".join(lines)
+    for day in days:
+        rec = acc.daily_stats[day]
+        try:
+            label = "Сегодня" if day == today_key() else \
+                datetime.date.fromisoformat(day).strftime("%d.%m.%Y")
+        except ValueError:
+            label = day
+        lines.append(
+            f"• {label}: всего ШК за день — {rec.get('total', 0)}, "
+            f"осталось «в работе» — {rec.get('in_work', 0)}"
+        )
+    if len(acc.daily_stats) > 7:
+        lines.append(f"\n…ещё {len(acc.daily_stats) - 7} дней в истории (храню {acc.MAX_STAT_DAYS}).")
+    lines.append("\n«В работе» — признак колонки «Статус» в вашей таблице на момент последней проверки.")
+    return "\n".join(lines)
 
 
 def access_line() -> str:
@@ -196,8 +225,10 @@ def help_text(acc: Account) -> str:
         "🆕 Мои новые ШК — ваши последние уведомления\n"
         "🔎 Поиск по ID — последние 20 ШК любого сотрудника\n"
         "👥 Отслеживание — ваш список ID для уведомлений\n"
-        "🔔/🔕 — включить/выключить ваши уведомления\n\n"
+        "🔔/🔕 — включить/выключить ваши уведомления\n"
+        "📊 Статистика — сколько ШК было за день и сколько «в работе»\n\n"
         "Команды:\n"
+        "/stats — дневная статистика (последние 7 дней)\n"
         "/sheet [ссылка|reset] — своя Google-таблица\n"
         "/id — ваш Telegram ID\n"
         "/status — ваш аккаунт\n"
@@ -254,6 +285,7 @@ async def cmd_version(message: Message) -> None:
 @dp.message(Command("status"))
 async def cmd_status(message: Message) -> None:
     acc = account_from_message(message)
+    today = acc.day_stats(today_key())
     await message.answer(
         "📊 Статус вашего аккаунта\n"
         f"{version_line()}\n"
@@ -262,12 +294,24 @@ async def cmd_status(message: Message) -> None:
         f"Известных вам ШК: {len(acc.seen_barcodes)}\n"
         f"В ленте уведомлений: {len(acc.newest_notifications)}\n"
         f"Последний просмотренный ID: {acc.last_lookup_id or '—'}\n"
+        f"За сегодня: всего ШК — {today['total']}, «в работе» — {today['in_work']}\n"
         f"{filter_line(acc)}\n"
         f"{sheet_line(acc)}\n"
         f"{access_line()}\n"
         f"Интервал проверки: {config.POLL_INTERVAL} сек.",
         reply_markup=main_kb(acc),
     )
+
+
+@dp.message(Command("stats"))
+async def cmd_stats(message: Message) -> None:
+    acc = account_from_message(message)
+    await message.answer(stats_text(acc), reply_markup=main_kb(acc))
+
+
+@dp.message(F.text == "📊 Статистика")
+async def kb_stats(message: Message) -> None:
+    await cmd_stats(message)
 
 
 @dp.message(Command("subscribe"))
@@ -688,6 +732,23 @@ def rows_for_account(rows: list[dict], acc: Account) -> dict[str, dict]:
     return result
 
 
+def count_in_work(rows: list[dict], acc: Account) -> int:
+    """Сколько ШК из строк пользователя сейчас со статусом «в работе»."""
+    count = 0
+    for row in rows:
+        code = (row.get(config.BARCODE_COLUMN, "") or "").strip()
+        if not code:
+            continue
+        if acc.employee_ids:
+            emp_id = (row.get(config.EMPLOYEE_ID_COLUMN, "") or "").strip()
+            if emp_id not in acc.employee_ids:
+                continue
+        status = (row.get(config.STATUS_COLUMN, "") or "").strip().lower()
+        if "в работе" in status:
+            count += 1
+    return count
+
+
 async def send_to_user_chats(acc: Account, text: str) -> None:
     """Отправить уведомление только в чаты этого пользователя."""
     allowed = state.allowed_ids()
@@ -722,6 +783,13 @@ async def poll_sheet(session: aiohttp.ClientSession) -> None:
             continue  # таблица недоступна — не трогаем состояние аккаунта
 
         known = rows_for_account(rows, acc)
+        day = today_key()
+
+        # Сколько ШК осталось «в работе» — обновляем даже если новых ШК нет.
+        in_work = count_in_work(rows, acc)
+        if acc.day_stats(day).get("in_work", 0) != in_work:
+            acc.set_daily_in_work(day, in_work)
+            changed = True
 
         if not acc.initialized:
             # Первый опрос аккаунта: запоминаем все текущие ШК, ничего не шлём.
@@ -738,6 +806,7 @@ async def poll_sheet(session: aiohttp.ClientSession) -> None:
 
         for code in new_codes:
             acc.add_seen(code)
+        acc.add_daily_total(day, len(new_codes))
         for code in new_codes:
             acc.push_notification(code, known[code])
             await send_to_user_chats(acc, format_barcode_message(code, known[code]))
@@ -823,6 +892,7 @@ async def main() -> None:
             BotCommand(command="subscribe", description="Включить мои уведомления"),
             BotCommand(command="unsubscribe", description="Выключить мои уведомления"),
             BotCommand(command="status", description="Мой аккаунт"),
+            BotCommand(command="stats", description="Статистика за день"),
             BotCommand(command="ids", description="Мои ID сотрудников"),
             BotCommand(command="sheet", description="Моя Google-таблица"),
             BotCommand(command="access", description="Доступ (админы)"),
