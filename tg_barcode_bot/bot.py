@@ -34,7 +34,7 @@ from sheet import fetch_rows, normalize_sheet_url
 from state import Account, State
 
 # Версия бота. Увеличивайте при каждом изменении кода!
-BOT_VERSION = "3.3.0"
+BOT_VERSION = "3.3.1"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -875,12 +875,12 @@ def in_work_page_text(acc: Account, items: list[dict], page: int) -> tuple[str, 
         f"👥 ID: {ids}    📄 {page + 1}/{pages}",
         "",
     ]
+    key_rows: list[list[InlineKeyboardButton]] = []
     start = page * IN_WORK_PAGE_SIZE
     for i, row in enumerate(items[start:start + IN_WORK_PAGE_SIZE], start + 1):
         code = (row.get(config.BARCODE_COLUMN, "") or "").strip()
         request_id = (row.get("ID заявки", "") or "").strip()
         created = (row.get("Дата создания", "") or "").strip()
-        name = (row.get("ФИО", "") or "").strip()
         decision = (row.get("Решение по заявке", "") or "").strip()
 
         marker = IN_WORK_MARKERS[i - 1] if i <= len(IN_WORK_MARKERS) else f"{i}."
@@ -891,29 +891,44 @@ def in_work_page_text(acc: Account, items: list[dict], page: int) -> tuple[str, 
             # убираем секунды, чтобы строка не была такой длинной
             short_date = created.rsplit(":", 1)[0] if created.count(":") == 2 else created
             block.append(f"   📅 {short_date}")
-        if name:
-            block.append(f"   👤 {name}")
         block.append(f"   ⚖️ Решение: {decision}" if decision else "   ⚪ Решение не внесено")
         lines.extend(block)
         lines.append("")
 
+        # Кнопки отправляют значение отдельным сообщением — его можно выделить
+        # и скопировать долгим нажатием (Telegram не умеет писать в буфер напрямую).
+        copy_row = [InlineKeyboardButton(text=f"📋 ШК {code}", callback_data=f"copy:{code}")]
+        if request_id:
+            short_id = request_id[:8] + "…" if len(request_id) > 9 else request_id
+            copy_row.append(
+                InlineKeyboardButton(text=f"🆔 {short_id}", callback_data=f"copy:{request_id}")
+            )
+        key_rows.append(copy_row)
+
     if lines[-1] == "":
         lines.pop()
 
-    buttons: list[InlineKeyboardButton] = []
+    nav: list[InlineKeyboardButton] = []
     if page > 0:
-        buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"work:{page - 1}"))
+        nav.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"work:{page - 1}"))
     if page < pages - 1:
-        buttons.append(InlineKeyboardButton(text="➡️ Дальше", callback_data=f"work:{page + 1}"))
-    rows = []
-    if buttons:
-        rows.append(buttons)
-    rows.append([
+        nav.append(InlineKeyboardButton(text="➡️ Дальше", callback_data=f"work:{page + 1}"))
+    if nav:
+        key_rows.append(nav)
+    key_rows.append([
         InlineKeyboardButton(text="🔄 Обновить", callback_data="work:refresh"),
         InlineKeyboardButton(text="❌ Закрыть", callback_data="work:close"),
     ])
-    kb = InlineKeyboardMarkup(inline_keyboard=rows)
-    return "\n".join(lines), kb
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=key_rows)
+
+
+@dp.callback_query(F.data.startswith("copy:"))
+async def cb_copy_value(call: CallbackQuery) -> None:
+    """Отправить ШК или ID отдельным сообщением, чтобы его можно было скопировать."""
+    value = call.data.split(":", 1)[1]
+    await call.answer("Нажмите и удерживайте сообщение ниже, чтобы скопировать")
+    if call.message:
+        await call.message.answer(value)
 
 
 @dp.callback_query(F.data.startswith("work:"))

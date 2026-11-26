@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
-![Version](https://img.shields.io/badge/version-3.3.0-brightgreen)
+![Version](https://img.shields.io/badge/version-3.3.1-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux&logoColor=black)
 ![Polling](https://img.shields.io/badge/mode-polling-important)
 
