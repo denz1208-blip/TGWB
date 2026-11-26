@@ -49,6 +49,7 @@ bot: Bot = None  # инициализируется в main()
 LOOKUP_COUNT = 20  # сколько последних ШК показывать по ID
 IN_WORK_PAGE_SIZE = 10  # сколько заявок «в работе» показывать на одной странице
 IN_WORK_CACHE_TTL = 60  # секунд: кэш строк для постраничного просмотра
+IN_WORK_MARKERS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
 waiting_for_lookup: set[int] = set()  # Telegram ID пользователей, ждущих ввод ID
 # user_id -> (время загрузки, строки таблицы), чтобы листать страницы без повторной загрузки
 in_work_cache: dict[int, tuple[float, list[dict]]] = {}
@@ -859,20 +860,19 @@ def in_work_page_text(acc: Account, items: list[dict], page: int) -> tuple[str, 
     pages = max(1, (len(items) + IN_WORK_PAGE_SIZE - 1) // IN_WORK_PAGE_SIZE)
     page = min(max(page, 0), pages - 1)
 
+    ids = ", ".join(sorted(acc.employee_ids)) if acc.employee_ids else "все"
     if not items:
         statuses = ", ".join(f"«{s}»" for s in sorted(config.IN_WORK_STATUSES))
         return (
-            f"📋 Сейчас нет заявок со статусом {statuses}.\n"
-            f"{filter_line(acc)}\n"
+            f"📋 Заявок со статусом {statuses} сейчас нет.\n"
+            f"👥 ID: {ids}\n"
             f"{sheet_line(acc)}",
             None,
         )
 
-    statuses = ", ".join(f"«{s}»" for s in sorted(config.IN_WORK_STATUSES))
     lines = [
-        f"📋 Заявки в работе ({statuses}): {len(items)}",
-        filter_line(acc),
-        f"Страница {page + 1} из {pages}",
+        f"📋 Заявки в работе: {len(items)}",
+        f"👥 ID: {ids}    📄 {page + 1}/{pages}",
         "",
     ]
     start = page * IN_WORK_PAGE_SIZE
@@ -883,15 +883,22 @@ def in_work_page_text(acc: Account, items: list[dict], page: int) -> tuple[str, 
         name = (row.get("ФИО", "") or "").strip()
         decision = (row.get("Решение по заявке", "") or "").strip()
 
-        line = f"{i}. {code}"
+        marker = IN_WORK_MARKERS[i - 1] if i <= len(IN_WORK_MARKERS) else f"{i}."
+        block = [f"{marker} ШК {code}"]
         if request_id:
-            line += f" · заявка №{request_id}"
+            block.append(f"   🆔 {request_id}")
         if created:
-            line += f" · {created}"
+            # убираем секунды, чтобы строка не была такой длинной
+            short_date = created.rsplit(":", 1)[0] if created.count(":") == 2 else created
+            block.append(f"   📅 {short_date}")
         if name:
-            line += f" · {name}"
-        lines.append(line)
-        lines.append(f"   ⚖️ Решение по заявке: {decision or '— не внесено —'}")
+            block.append(f"   👤 {name}")
+        block.append(f"   ⚖️ Решение: {decision}" if decision else "   ⚪ Решение не внесено")
+        lines.extend(block)
+        lines.append("")
+
+    if lines[-1] == "":
+        lines.pop()
 
     buttons: list[InlineKeyboardButton] = []
     if page > 0:
