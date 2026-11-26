@@ -34,7 +34,7 @@ from sheet import fetch_rows, normalize_sheet_url
 from state import Account, State
 
 # Версия бота. Увеличивайте при каждом изменении кода!
-BOT_VERSION = "3.2.0"
+BOT_VERSION = "3.3.0"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,7 +47,14 @@ dp = Dispatcher()
 bot: Bot = None  # инициализируется в main()
 
 LOOKUP_COUNT = 20  # сколько последних ШК показывать по ID
+IN_WORK_PAGE_SIZE = 10  # сколько заявок «в работе» показывать на одной странице
+IN_WORK_CACHE_TTL = 60  # секунд: кэш строк для постраничного просмотра
 waiting_for_lookup: set[int] = set()  # Telegram ID пользователей, ждущих ввод ID
+# user_id -> (время загрузки, строки таблицы), чтобы листать страницы без повторной загрузки
+in_work_cache: dict[int, tuple[float, list[dict]]] = {}
+
+# Статусы «в работе» в нижнем регистре — сравнение без учёта регистра и пробелов.
+IN_WORK_STATUSES_CF = {s.strip().casefold() for s in config.IN_WORK_STATUSES}
 
 
 def git_commit() -> str:
@@ -147,7 +154,8 @@ def main_kb(acc: Account) -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🆕 Мои новые ШК"), KeyboardButton(text=sub_btn)],
             [KeyboardButton(text="🔎 Поиск по ID"), KeyboardButton(text="👥 Отслеживание")],
-            [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="ℹ️ Помощь")],
+            [KeyboardButton(text="📋 В работе"), KeyboardButton(text="📊 Статистика")],
+            [KeyboardButton(text="ℹ️ Помощь")],
         ],
         resize_keyboard=True,
     )
@@ -171,6 +179,23 @@ def filter_line(acc: Account) -> str:
 
 def sheet_line(acc: Account) -> str:
     return "Ваша таблица: своя (/sheet)" if acc.sheet_url else "Ваша таблица: общая (/sheet)"
+
+
+def is_in_work(row: dict) -> bool:
+    """Точная проверка статуса: «В работе», но не «В работе у другого модератора»."""
+    status = (row.get(config.STATUS_COLUMN, "") or "").strip().casefold()
+    return bool(status) and status in IN_WORK_STATUSES_CF
+
+
+def parse_sheet_date(value: str):
+    """Разобрать дату из таблицы; None, если формат не распознан."""
+    value = (value or "").strip()
+    for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+        try:
+            return datetime.datetime.strptime(value, fmt)
+        except ValueError:
+            pass
+    return None
 
 
 def today_key() -> str:
@@ -197,7 +222,11 @@ def stats_text(acc: Account) -> str:
         )
     if len(acc.daily_stats) > 7:
         lines.append(f"\n…ещё {len(acc.daily_stats) - 7} дней в истории (храню {acc.MAX_STAT_DAYS}).")
-    lines.append("\n«В работе» — признак колонки «Статус» в вашей таблице на момент последней проверки.")
+    statuses = ", ".join(f"«{s}»" for s in sorted(config.IN_WORK_STATUSES))
+    lines.append(
+        f"\n«В работе» — заявки со статусом {statuses} (точное совпадение) "
+        "в вашей таблице на момент последней проверки."
+    )
     return "\n".join(lines)
 
 
@@ -227,6 +256,7 @@ def help_text(acc: Account) -> str:
         "🔎 Поиск по ID — последние 20 ШК любого сотрудника\n"
         "👥 Отслеживание — ваш список ID для уведомлений\n"
         "🔔/🔕 — включить/выключить ваши уведомления\n"
+        "📋 В работе — список заявок со статусом «В работе» и их «Решение по заявке»\n"
         "📊 Статистика — сколько ШК было за день и сколько «в работе»\n\n"
         "Команды:\n"
         "/stats — дневная статистика (последние 7 дней)\n"
@@ -349,6 +379,20 @@ async def cmd_stats(message: Message) -> None:
 @dp.message(F.text == "📊 Статистика")
 async def kb_stats(message: Message) -> None:
     await cmd_stats(message)
+
+
+@dp.message(F.text == "📋 В работе")
+async def kb_in_work(message: Message) -> None:
+    """Кнопка главного меню: список заявок со статусом «В работе»."""
+    acc = account_from_message(message)
+    msg = await message.answer("⏳ Загружаю заявки «в работе»…")
+    try:
+        items = await get_in_work_rows(acc, force=True)
+    except Exception as e:  # noqa: BLE001
+        await msg.edit_text(f"❌ Ошибка чтения таблицы: {e}")
+        return
+    text, kb = in_work_page_text(acc, items, 0)
+    await msg.edit_text(text, reply_markup=kb)
 
 
 @dp.message(Command("subscribe"))
@@ -687,18 +731,7 @@ async def build_lookup_text(emp_id: str, acc: Account) -> str:
             and (r.get(config.BARCODE_COLUMN, "") or "").strip()
         ]
 
-    import datetime as _dt
-
-    def _parse_date(s: str):
-        s = (s or "").strip()
-        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
-            try:
-                return _dt.datetime.strptime(s, fmt)
-            except ValueError:
-                pass
-        return None
-
-    parsed = [(_parse_date(r.get("Дата создания", "")), r) for r in found]
+    parsed = [(parse_sheet_date(r.get("Дата создания", "")), r) for r in found]
     with_dates = sorted(
         (p for p in parsed if p[0] is not None), key=lambda p: p[0], reverse=True
     )
@@ -780,10 +813,133 @@ def count_in_work(rows: list[dict], acc: Account) -> int:
             emp_id = (row.get(config.EMPLOYEE_ID_COLUMN, "") or "").strip()
             if emp_id not in acc.employee_ids:
                 continue
-        status = (row.get(config.STATUS_COLUMN, "") or "").strip().lower()
-        if "в работе" in status:
+        if is_in_work(row):
             count += 1
     return count
+
+
+# --------------------------- Заявки «в работе» ------------------------------
+
+def rows_in_work(rows: list[dict], acc: Account) -> list[dict]:
+    """Заявки «в работе» из строк таблицы пользователя (сначала свежие)."""
+    found = []
+    for row in rows:
+        code = (row.get(config.BARCODE_COLUMN, "") or "").strip()
+        if not code or not is_in_work(row):
+            continue
+        if acc.employee_ids:
+            emp_id = (row.get(config.EMPLOYEE_ID_COLUMN, "") or "").strip()
+            if emp_id not in acc.employee_ids:
+                continue
+        found.append(row)
+
+    parsed = [(parse_sheet_date(row.get("Дата создания", "")), row) for row in found]
+    with_dates = sorted(
+        (p for p in parsed if p[0] is not None), key=lambda p: p[0], reverse=True
+    )
+    without = [row for date, row in parsed if date is None]
+    return [row for _, row in with_dates] + without
+
+
+async def get_in_work_rows(acc: Account, force: bool = False) -> list[dict]:
+    """Список заявок «в работе» с коротким кэшем для постраничного просмотра."""
+    now = datetime.datetime.now().timestamp()
+    cached = in_work_cache.get(acc.user_id)
+    if not force and cached and now - cached[0] < IN_WORK_CACHE_TTL:
+        return cached[1]
+    async with aiohttp.ClientSession() as session:
+        rows = await fetch_rows(session, sheet_of(acc))
+    items = rows_in_work(rows, acc)
+    in_work_cache[acc.user_id] = (now, items)
+    return items
+
+
+def in_work_page_text(acc: Account, items: list[dict], page: int) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Текст и клавиатура одной страницы списка заявок «в работе»."""
+    pages = max(1, (len(items) + IN_WORK_PAGE_SIZE - 1) // IN_WORK_PAGE_SIZE)
+    page = min(max(page, 0), pages - 1)
+
+    if not items:
+        statuses = ", ".join(f"«{s}»" for s in sorted(config.IN_WORK_STATUSES))
+        return (
+            f"📋 Сейчас нет заявок со статусом {statuses}.\n"
+            f"{filter_line(acc)}\n"
+            f"{sheet_line(acc)}",
+            None,
+        )
+
+    statuses = ", ".join(f"«{s}»" for s in sorted(config.IN_WORK_STATUSES))
+    lines = [
+        f"📋 Заявки в работе ({statuses}): {len(items)}",
+        filter_line(acc),
+        f"Страница {page + 1} из {pages}",
+        "",
+    ]
+    start = page * IN_WORK_PAGE_SIZE
+    for i, row in enumerate(items[start:start + IN_WORK_PAGE_SIZE], start + 1):
+        code = (row.get(config.BARCODE_COLUMN, "") or "").strip()
+        request_id = (row.get("ID заявки", "") or "").strip()
+        created = (row.get("Дата создания", "") or "").strip()
+        name = (row.get("ФИО", "") or "").strip()
+        decision = (row.get("Решение по заявке", "") or "").strip()
+
+        line = f"{i}. {code}"
+        if request_id:
+            line += f" · заявка №{request_id}"
+        if created:
+            line += f" · {created}"
+        if name:
+            line += f" · {name}"
+        lines.append(line)
+        lines.append(f"   ⚖️ Решение по заявке: {decision or '— не внесено —'}")
+
+    buttons: list[InlineKeyboardButton] = []
+    if page > 0:
+        buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"work:{page - 1}"))
+    if page < pages - 1:
+        buttons.append(InlineKeyboardButton(text="➡️ Дальше", callback_data=f"work:{page + 1}"))
+    rows = []
+    if buttons:
+        rows.append(buttons)
+    rows.append([
+        InlineKeyboardButton(text="🔄 Обновить", callback_data="work:refresh"),
+        InlineKeyboardButton(text="❌ Закрыть", callback_data="work:close"),
+    ])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+    return "\n".join(lines), kb
+
+
+@dp.callback_query(F.data.startswith("work:"))
+async def cb_in_work_page(call: CallbackQuery) -> None:
+    action = call.data.split(":", 1)[1]
+    acc = account_from_call(call)
+
+    if action == "close":
+        await call.answer()
+        if call.message:
+            try:
+                await call.message.delete()
+            except Exception:  # noqa: BLE001
+                pass
+        return
+
+    try:
+        items = await get_in_work_rows(acc, force=(action == "refresh"))
+    except Exception as e:  # noqa: BLE001
+        await call.answer(f"Ошибка чтения таблицы: {e}", show_alert=True)
+        return
+
+    if action == "refresh" or not action.isdigit():
+        page = 0
+    else:
+        page = int(action)
+    text, kb = in_work_page_text(acc, items, page)
+    await call.answer()
+    if call.message:
+        try:
+            await call.message.edit_text(text, reply_markup=kb)
+        except Exception:  # noqa: BLE001
+            await call.message.answer(text, reply_markup=kb)
 
 
 async def send_to_user_chats(acc: Account, text: str) -> None:

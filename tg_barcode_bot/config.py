@@ -28,6 +28,16 @@ BARCODE_COLUMN = os.getenv("BARCODE_COLUMN", "ШК")
 # Колонка со статусом (уведомления только если она пустая)
 STATUS_COLUMN = os.getenv("STATUS_COLUMN", "Статус")
 
+# Статусы, которые считаются «заявками в работе».
+# Точное совпадение (регистр и пробелы игнорируются): «В работе у другого
+# модератора» НЕ считается работой текущего пользователя.
+# Можно переопределить через .env, например: IN_WORK_STATUSES=В работе,Перераспределено
+IN_WORK_STATUSES: set[str] = {
+    x.strip()
+    for x in os.getenv("IN_WORK_STATUSES", "В работе").split(",")
+    if x.strip()
+}
+
 # Колонка с ID сотрудника (ФИО/данные подтягиваются из строки таблицы)
 EMPLOYEE_ID_COLUMN = os.getenv("EMPLOYEE_ID_COLUMN", "ID")
 
@@ -53,4 +63,4 @@ ALLOWED_USER_IDS: set[int] = {
 }
 
 # Версия бота. Увеличивайте при каждом изменении кода (и в bot.py).
-BOT_VERSION = "3.2.0"
+BOT_VERSION = "3.3.0"

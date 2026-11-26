@@ -6,7 +6,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-2CA5E0?logo=telegram&logoColor=white)
-![Version](https://img.shields.io/badge/version-3.2.0-brightgreen)
+![Version](https://img.shields.io/badge/version-3.3.0-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey?logo=linux&logoColor=black)
 ![Polling](https://img.shields.io/badge/mode-polling-important)
 
@@ -26,7 +26,8 @@
 | 📬 Свои уведомления | Только ваши новые ШК, только с пустым статусом, только в ваши чаты. |
 | 📄 Своя таблица | `/sheet <ссылка>` — персональная Google-таблица; `/sheet reset` — общая. |
 | 🕓 Своя история | Команда «🆕 Мои новые ШК» показывает последние 20 ваших событий. |
-| 📊 Дневная статистика | `/stats` — сколько ШК было за день и сколько осталось «в работе». |
+| 📊 Дневная статистика | `/stats` — сколько ШК было за день и сколько осталось «в работе» (точно со статусом «В работе»). |
+| 📋 Заявки в работе | Кнопка «📋 В работе» — список заявок со статусом «В работе» и их «Решение по заявке». |
 | 🔐 Общий контроль доступа | `/access` и `/users` доступны только администраторам. |
 | ⚙️ Без API-ключей | Таблица читается через публичный CSV-экспорт. |
 | 🚀 Простой деплой | Одна команда `sudo ./install.sh` поднимает systemd-сервис. |
@@ -63,6 +64,7 @@ journalctl -u barcode-bot -f
 | `🔎 Поиск по ID` | Последние 20 ШК сотрудника в вашей таблице |
 | `👥 Отслеживание` | Ваш список ID сотрудников |
 | `/ids clear` | Следить за всеми сотрудниками |
+| `📋 В работе` | Список заявок со статусом «В работе» и решением по ним |
 | `/stats` | Сколько ШК за день и сколько «в работе» |
 | `/sheet <ссылка>` | Задать свою Google-таблицу |
 | `/sheet reset` | Вернуться к общей таблице |
